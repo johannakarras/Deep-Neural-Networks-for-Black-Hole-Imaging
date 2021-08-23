@@ -4,6 +4,10 @@ Very long baseline interferometry (VLBI)} uses an array of physically disconnect
 
 **We propose  an alternative, data-driven approach that uses a convolutional neural network to reconstruct the hidden image from measurement data.**
 
+<p align="center">
+  <img width="600" height="400" src="https://github.com/JSKarras/Deep-Neural-Networks-for-Black-Hole-Imaging/blob/b927df2b473a440e7767d76c2767d1e56eb3149b/Media/Neural%20Network%20Architecture.png" alt="Neural Network Architecture">
+</p>
+
 This work was presented as a  [poster](Media/Poster.png) and [extended abstract](Media/Extended_Abstract.pdf) at the WiCV Workshop at CVPR 2021.
 
 ## Demos
