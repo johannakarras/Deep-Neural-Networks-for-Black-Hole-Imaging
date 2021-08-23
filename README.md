@@ -14,7 +14,7 @@ To test our methods on simulated black hole images, you can download the dataset
 
 ### RML Demo
 
-You can test our implementation of regularized maximum likelihood method using our [python notebook demo](RML/RML Demo.ipynb).
+You can test our implementation of regularized maximum likelihood method using our [python notebook demo](RML/https://github.com/JSKarras/Deep-Neural-Networks-for-Black-Hole-Imaging/blob/d6d2981685fcfa78ea2f0b88cdb9182fa8a39dd6/RML/RML%20Demo.ipynb).
 
 ### Neural Network Demo
 
