@@ -101,14 +101,28 @@ nsamp = 10000 # number of samples in dataset
 		- sefd_param: type of site-wide standard deviation
 		- eht_array: name of EHT telescope array to use
 		- target: imaging target, 'm89' or 'sgrA'
+		- thnoise: if True, add thermal noise to observation data
+		- gain_err: if True, add gain error to observation data
+		- phase_err: if True, add phase error to observation data
 		- data_augmentation: if True, augments training images
 		- npix: image dimension (square, pixels)
 	-----------------------------------------------------------------------------------------------------
+	Returns:
+		- xdata: simulated complex visibilities for dataset, using specified parameters
+		- xdata_blur: simulated complex visibilities for 0.3*fwhm blurred dataset
+		- t1, t2
+		- F: fourier transform matrix for generating complex visibilities
+		- sigma: standard deviations of thermal noise per site
+		- obs.res(): full-width half-max (fwhm)
+		- obs: observations file
+	-----------------------------------------------------------------------------------------------------
 '''
-def Prepare_EHT_Data(fov_param, flux_label, blur_param, sefd_param=1, eht_array='eht2017', target='m87', data_augmentation=False, npix=32):
-    add_th_noise = True # False if you *don't* want to add thermal error. If there are no sefds in obs_orig it will use the sigma for each data point
-    phasecal = True # True if you don't want to add atmospheric phase error. if False then it adds random phases to simulate atmosphere
-    ampcal = True # True if you don't want to add atmospheric amplitude error. if False then add random gain errors 
+def Prepare_EHT_Data(fov_param, flux_label, blur_param, eht_array='eht2017', target='m87',
+					 thnoise=False, phase_err=False, gain_err=False,
+					 sefd_param=1, data_augmentation=False, npix=32):
+    add_th_noise = False # False if you *don't* want to add thermal error. If there are no sefds in obs_orig it will use the sigma for each data point
+    phasecal = not phase_err # True if you don't want to add atmospheric phase error. if False then it adds random phases to simulate atmosphere
+    ampcal = not gain_err # True if you don't want to add atmospheric amplitude error. if False then add random gain errors 
     stabilize_scan_phase = False # if true then add a single phase error for each scan to act similar to adhoc phasing
     stabilize_scan_amp = False # if true then add a single gain error at each scan
     jones = False # apply jones matrix for including noise in the measurements (including leakage)
@@ -135,7 +149,6 @@ def Prepare_EHT_Data(fov_param, flux_label, blur_param, sefd_param=1, eht_array=
         ra = 19.414182210498385
         dec = -29.24170032236311
     rf = 230e9
-    # npix = 32
     mjd = 57853 # day of observation
     simim = eh.image.make_empty(npix, fov, ra, dec, rf=rf, source='random', mjd=mjd)
     simim.imvec = np.zeros((npix, npix, 1)).reshape((-1, 1))#xdata[0, :, :, :].reshape((-1, 1))
@@ -152,69 +165,10 @@ def Prepare_EHT_Data(fov_param, flux_label, blur_param, sefd_param=1, eht_array=
     vis = obs.data['vis']
     n_sites = np.unique(np.concatenate([t1, t2])).shape[0] + 1
 
-    ###############################################################################
-    # generate the discrete Fourier transform matrices for closure phases
-    ###############################################################################
-
-    # obs.add_cphase(count='min')
-    obs.add_cphase(count='max')
-    tc1 = obs.cphase['t1']
-    tc2 = obs.cphase['t2']
-    tc3 = obs.cphase['t3']
-
-    cphase_map = np.zeros((len(obs.cphase['time']), 3))
-
-    zero_symbol = 10000
-    for k1 in range(cphase_map.shape[0]):
-        for k2 in list(np.where(obs.data['time']==obs.cphase['time'][k1])[0]):
-            if obs.data['t1'][k2] == obs.cphase['t1'][k1] and obs.data['t2'][k2] == obs.cphase['t2'][k1]:
-                cphase_map[k1, 0] = k2
-                if k2 == 0:
-                    cphase_map[k1, 0] = zero_symbol
-            elif obs.data['t2'][k2] == obs.cphase['t1'][k1] and obs.data['t1'][k2] == obs.cphase['t2'][k1]:
-                cphase_map[k1, 0] = -k2
-                if k2 == 0:
-                    cphase_map[k1, 0] = -zero_symbol
-            elif obs.data['t1'][k2] == obs.cphase['t2'][k1] and obs.data['t2'][k2] == obs.cphase['t3'][k1]:
-                cphase_map[k1, 1] = k2
-                if k2 == 0:
-                    cphase_map[k1, 1] = zero_symbol
-            elif obs.data['t2'][k2] == obs.cphase['t2'][k1] and obs.data['t1'][k2] == obs.cphase['t3'][k1]:
-                cphase_map[k1, 1] = -k2
-                if k2 == 0:
-                    cphase_map[k1, 1] = -zero_symbol
-            elif obs.data['t1'][k2] == obs.cphase['t3'][k1] and obs.data['t2'][k2] == obs.cphase['t1'][k1]:
-                cphase_map[k1, 2] = k2
-                if k2 == 0:
-                    cphase_map[k1, 2] = zero_symbol
-            elif obs.data['t2'][k2] == obs.cphase['t3'][k1] and obs.data['t1'][k2] == obs.cphase['t1'][k1]:
-                cphase_map[k1, 2] = -k2
-                if k2 == 0:
-                    cphase_map[k1, 2] = -zero_symbol
-
-
-    F_cphase = np.zeros((cphase_map.shape[0], npix*npix, 3), dtype=np.complex64)
-    cphase_proj = np.zeros((cphase_map.shape[0], F.shape[0]), dtype=np.float32)
-    for k in range(cphase_map.shape[0]):
-        for j in range(cphase_map.shape[1]):
-            if cphase_map[k][j] > 0:
-                if int(cphase_map[k][j]) == zero_symbol:
-                    cphase_map[k][j] = 0
-                F_cphase[k, :, j] = F[int(cphase_map[k][j]), :]
-                cphase_proj[k, int(cphase_map[k][j])] = 1
-            else:
-                if np.abs(int(cphase_map[k][j])) == zero_symbol:
-                    cphase_map[k][j] = 0
-                F_cphase[k, :, j] = np.conj(F[int(-cphase_map[k][j]), :])
-                cphase_proj[k, int(-cphase_map[k][j])] = -1
-
-    ###############################################################################
     # load the data
-    ###############################################################################
     (x_train, y_train), (x_test, y_test) = fashion_mnist.load_data()
     (x_train_mnist, y_train_mnist), (x_test_mnist, y_test_mnist) = mnist.load_data()
 
-    
     xdata_train = 1.0*x_train[[k%60000 for k in range(int(nsamp*0.7))]]
     xdata_train = np.pad(xdata_train, ((0,0), (2,2), (2,2)), 'constant')  # get to 32x32
 
@@ -229,35 +183,26 @@ def Prepare_EHT_Data(fov_param, flux_label, blur_param, sefd_param=1, eht_array=
 
     xdata = np.concatenate([xdata_train, xdata_test], 0)
     
-    ###############################################################################
     # blur training data by 0.3*fwhm
-    ###############################################################################
     res = obs.res()
     simim = eh.image.make_empty(32, fov, ra, dec, rf=rf, source='random', mjd=mjd)
     for k in range(xdata.shape[0]):
         simim.imvec = xdata[k, :, :, :].reshape((-1, 1))
         im_out = simim.blur_circ(0.3*res)
         xdata[k, :, :, 0] = im_out.imvec.reshape((32, 32))
-            
-    ###############################################################################
+
     # data augmentation
-    ###############################################################################
     if data_augmentation:
         print("Adding augmented data to training set....")
         xdata_augmented = np.load('precomputed_xdata/fashion_xdata_data_augmentation2.npy')
         xdata_augmented = xdata.reshape((xdata_augmented.shape[0], 32, 32, 1))
         xdata = np.concatenate([xdata, xdata_augmented], 0)
     
-    ###############################################################################
     # define uniform flux = 224.46
-    ###############################################################################
     for k in range(len(xdata)):
         xdata[k] = 224.46*xdata[k] / np.sum(xdata[k])
 
-        
-    ###############################################################################
     # define additional blurry effect: 
-    ###############################################################################
     xdata_blur = np.zeros(xdata.shape)
     res = obs.res()
     for k in range(xdata.shape[0]):
@@ -265,9 +210,8 @@ def Prepare_EHT_Data(fov_param, flux_label, blur_param, sefd_param=1, eht_array=
         im_out = simim.blur_circ(blur_param*res)
         xdata_blur[k, :, :, 0] = im_out.imvec.reshape((32, 32))
 
-    ###############################################################################
-    # thermal noises: 0 represents no thermal noises, 1 represents site-varying thermal noises, 2 represents site-equivalent thermal noises
-    ###############################################################################
+    # thermal noises: 0 represents no thermal noises, 1 represents site-varying thermal noises, 
+    #				  2 represents site-equivalent thermal noises
     if sefd_param == 1:
         sigma = 224.46 * np.concatenate([np.expand_dims(obs.data['sigma'], -1), np.expand_dims(obs.data['sigma'], -1)], -1)
     elif sefd_param == 2:
@@ -275,9 +219,8 @@ def Prepare_EHT_Data(fov_param, flux_label, blur_param, sefd_param=1, eht_array=
         sigma = np.mean(sigma.reshape((-1, ))) * np.ones(sigma.shape)
     else:
         sigma = 224.46 * np.concatenate([np.expand_dims(obs.data['sigma'], -1), np.expand_dims(obs.data['sigma'], -1)], -1)
-    
         
-    return xdata, xdata_blur, t1, t2, F, tc1, tc2, tc3, F_cphase, cphase_proj, sigma, obs.res(), obs
+    return [xdata, xdata_blur, t1, t2, F, sigma, obs.res(), obs]
 
 ''' Return images and blurred images from dataset. '''
 def get_data(dataset, fwhm, blur_param=0.0):
@@ -358,8 +301,6 @@ def get_data(dataset, fwhm, blur_param=0.0):
 def chisq_loss(x_true, pred_vis):
     # compute true visibility
     true_vis = keras.layers.Lambda(hp.Lambda_dft(global_F))(x_true)
-    #tf.print(true_vis, output_stream=sys.stderr)
-    #tf.print(global_S, output_stream=sys.stderr)
 
     # compute chisq loss
     num = tf.reduce_mean(tf.square(tf.divide(tf.abs(tf.subtract(pred_vis, true_vis)), global_S)), axis=0)
@@ -471,9 +412,17 @@ def VisNet(t1, t2, F, n_ising_layers=5, slope_const=1e2, sigma=None, binary_slop
 ##############################################################################
 # Training Function
 ##############################################################################
-def Train_VisNet(eht_array, target, fov_param, flux_label, blur_param, sefd_param, lr, nb_epochs_train, batch_size = 32, n_ising_layers = 5, models_dir='', savefile_name='nn_params', data_augmentation=False, weather=False):
-    # prepare the training data
-    xdata, xdata_blur, t1, t2, F, tc1, tc2, tc3, F_cphase, cphase_proj, sigma, fwhm, obs = Prepare_EHT_Data(fov_param, flux_label, blur_param, sefd_param, eht_array, target, data_augmentation)
+def Train_VisNet(eht_array, target, thnoise, gain_err, phase_err,
+				 fov_param, flux_label, blur_param, sefd_param, lr, nb_epochs_train, 
+				 batch_size = 32, n_ising_layers = 5, models_dir='', savefile_name='nn_params', 
+				 data_augmentation=False, weather=False):
+				 
+    # generate training data
+    obs_data = Prepare_EHT_Data(fov_param, flux_label, blur_param=blur_param, 
+    				eht_array=eht_array, target=target, thnoise=thnoise, 
+    				phase_err=phase_err, gain_err=gain_err, sefd_param=sefd_param, 
+    				data_augmentation=data_augmentation, npix=32)
+    [xdata, xdata_blur, t1, t2, F, sigma, fwhm, obs] = obs_data
     
     n_sites = np.unique(np.concatenate([t1, t2])).shape[0] + 1
     global global_F
@@ -556,6 +505,11 @@ if __name__ == '__main__':
     batch_size = 256
     data_augmentation = True
     weather = False
+    
+    # Define noise parameters
+    thnoise = False
+    gain_err = False
+    phase_err = False
     
     # Define model name and directory to save to
     models_dir = 'Models/nonoise_models/'
