@@ -21,3 +21,7 @@ You can test our implementation of regularized maximum likelihood method using o
 First, download our [pretrained model](https://www.dropbox.com/s/fszl68xkdr6hdt6/pretrained_model?dl=0) that was trained using the Fashion MNIST dataset with thermal noises added to the measurement data. 
 
 Next, you can test our neural network reconstruction network with complex visibilities using our [python notebook demo](https://github.com/JSKarras/Deep-Neural-Networks-for-Black-Hole-Imaging/blob/39c2c3a51bfacda9aa8e8527e57967e27dfc8bf8/Neural%20Network/Neural%20Network%20Demo.ipynb).
+
+### Training the Neural Network
+
+You can train your own deep neural network for black hole imaging using our [training script](https://github.com/JSKarras/Deep-Neural-Networks-for-Black-Hole-Imaging/blob/5f61c88d9d05218b4aceffb1c7e54164133f6d51/Neural%20Network/train.py) written in Python and TensorFlow. The model architechture is represented above.
